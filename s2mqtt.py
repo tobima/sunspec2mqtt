@@ -3,12 +3,12 @@
 import random
 import time
 
-import sunspec.core.client as sunspec_client
+import sunspec2.modbus.client as sunspec_client
 from paho.mqtt import client as mqtt_client
 
 sunspec_host = "192.168.178.105"
 sunspec_port = 502
-modbus_id = 200
+modbus_id = 1
 
 broker = "192.168.10.55"
 broker_port = 1883
@@ -28,26 +28,31 @@ def connect_mqtt():
   return client
 
 def connect_sunspec():
-  d = sunspec_client.SunSpecClientDevice(sunspec_client.TCP, modbus_id, ipaddr=sunspec_host, ipport=sunspec_port, timeout=1.0)
-  d.read()
+  d = sunspec_client.SunSpecModbusClientDeviceTCP(slave_id=modbus_id, ipaddr=sunspec_host, ipport=sunspec_port, timeout=1.0)
+  d.scan()
   return d
 
 def gather_points(b,p,c):
-  for point in b.points:
-    val = getattr(b,point)
-    if val is not None:
-      c.publish(p+"/"+point, val)
+  for key in b.points:
+    if key in ['ID', 'L', 'N'] or key.endswith('_SF'):
+      continue
+    point = getattr(b,key)
+    if point.is_impl():
+      c.publish(p+"/"+key, point.cvalue)
+      #print(p+"/"+key+": "+str(point.cvalue))
 
 def gather_sunspec(d,p,c):
-  d.read()
   for m in d.models:
+    if type(m) is not str:
+      continue
     model_topic=p+"/"+m
-    model = getattr(d,m)
+    model = d.models[m][0]
+    model.read()
     gather_points(model, model_topic, c)
-    if model.repeating is not None:
-      for idx, b in enumerate(model.repeating):
+    for g in model.groups:
+      for b in model.groups[g]:
         if b is not None:
-          block_topic = model_topic+"/"+model.repeating_name+"-"+str(idx)
+          block_topic = model_topic+"/"+g+"-"+str(b.index)
           gather_points(b,block_topic,c)
 
 def subscribe(client: mqtt_client):
@@ -59,14 +64,14 @@ def subscribe(client: mqtt_client):
 
 def run():
   d = connect_sunspec()
-  device_name=d.common.Mn+"-"+d.common.SN
+  device_name=d.common[0].Mn.value+"-"+d.common[0].SN.value
   topic=topic_prefix+"/"+device_name
   client = connect_mqtt()
   subscribe(client)
   client.loop_start()
   while True:
     gather_sunspec(d,topic,client)
-    time.sleep(10)
+    time.sleep(5)
 
 if __name__ == '__main__':
   run()
