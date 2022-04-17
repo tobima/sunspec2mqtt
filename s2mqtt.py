@@ -1,21 +1,24 @@
 #!/bin/python3
 
+import argparse
+import configparser
 import random
 import time
 
 import sunspec2.modbus.client as sunspec_client
+import sunspec2
+
 from paho.mqtt import client as mqtt_client
 
-sunspec_host = "192.168.178.105"
+sunspec_host = "127.0.0.1"
 sunspec_port = 502
 modbus_id = 1
 
-broker = "192.168.10.55"
+broker = "127.0.0.1"
 broker_port = 1883
-topic_prefix = "energy/solar"
-client_id = f'python-mqtt-{random.randint(0, 1000)}'
+topic_prefix = "foo"
 
-def connect_mqtt():
+def connect_mqtt(client_id):
   def on_connect(client, userdata, flags,rc):
     if rc == 0:
       print("Connected to MQTT Broker!")
@@ -65,13 +68,32 @@ def subscribe(client: mqtt_client):
 def run():
   d = connect_sunspec()
   device_name=d.common[0].Mn.value+"-"+d.common[0].SN.value
+  print("Found SunSpec device "+device_name)
   topic=topic_prefix+"/"+device_name
-  client = connect_mqtt()
+  client_id = 's2mqtt-'+device_name
+  client = connect_mqtt(client_id)
   subscribe(client)
   client.loop_start()
   while True:
-    gather_sunspec(d,topic,client)
+    try:
+      gather_sunspec(d,topic,client)
+    except sunspec2.modbus.modbus.ModbusClientError:
+      pass
     time.sleep(5)
 
 if __name__ == '__main__':
+  parser = argparse.ArgumentParser(description='SunSpec to MQTT bridge')
+  parser.add_argument('-c', help='config file')
+  args = parser.parse_args()
+  if args.c:
+    config = configparser.ConfigParser()
+    config.read(args.c)
+
+    sunspec_host = config["sunspec"]["host"]
+    sunspec_port = config["sunspec"].getint("port")
+    modbus_id = config["sunspec"].getint("device_id")
+
+    broker = config["mqtt"]["host"]
+    broker_port = config["mqtt"].getint("port")
+    topic_prefix = config["mqtt"]["topic"]
   run()
