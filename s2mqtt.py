@@ -4,6 +4,7 @@ import argparse
 import configparser
 import random
 import time
+import sys
 
 import sunspec2.modbus.client as sunspec_client
 import sunspec2
@@ -42,7 +43,6 @@ def gather_points(b,p,c):
     point = getattr(b,key)
     if point.is_impl():
       c.publish(p+"/"+key, point.cvalue)
-      #print(p+"/"+key+": "+str(point.cvalue))
 
 def gather_sunspec(d,p,c):
   for m in d.models:
@@ -78,7 +78,7 @@ def run():
     try:
       gather_sunspec(d,topic,client)
     except sunspec2.modbus.modbus.ModbusClientError:
-      pass
+      sys.exit(1)
     time.sleep(5)
 
 if __name__ == '__main__':
